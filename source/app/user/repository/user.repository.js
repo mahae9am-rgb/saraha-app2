@@ -8,3 +8,5 @@ export async function updateUserByEmail(email,updateUser) {
 }
 
 export default {updateUserByEmail}
+
+

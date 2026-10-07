@@ -7,8 +7,7 @@ export  function toMs(time,unit) {
             case 'hours':
                 return time*60*60*1000
                 default:
-                    return time
-    }
+throw new Error (`unknown unit:${unit}`)    }
     
 }
 export function toSeconds(time,unit) {
@@ -20,7 +19,8 @@ export function toSeconds(time,unit) {
                 case 'hours':
                     return time*60*60
                     default:
-                        return time
+                      throw new Error (`unknown unit:${unit}`)    
+
     }
     
 }

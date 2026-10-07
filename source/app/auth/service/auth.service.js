@@ -8,13 +8,17 @@ import { OTP } from '../model/otp.model.js'
 import JWT from 'jsonwebtoken'
 import otpjs, { generateOTPCode } from '../../../common/otp.js'
 import { toMs, toSeconds } from '../../../common/utilis/time.js'
-
+import * as userError from '../../user/error.js'
+import { generateToken } from '../utils/token.js'
+import { comparePassword, hashPassword } from '../utils/hash.js'
+import { invalidCode, otpExpiresin } from '../error.js'
+import { verifyidToken } from '../../../common/utilis/google-auth.js'
 
 export async function register(userData) {
-   const userExist = await authRepository.checkUserExistByEmail(userData.email)
-   if(userExist){throw new Error('user already exist')}
 
-userData.password =  await bcrypt.hash(userData.password,10)
+   const userExist = await authRepository.checkUserExistByEmail(userData.email)
+   if(userExist){ throw userAlreadtyExist}
+userData.password =  await hashPassword(userData.password)
 const createUser = await authRepository.createUser(userData)
 const otp =  await generateOTPCode()
 console.log("toSeconds result:", toSeconds(1, 'hours'))
@@ -43,11 +47,14 @@ return createUser
 
 export async function verifiyAccount(email,code) {
     const userExist = await authRepository.checkUserExistByEmail(email)
-    if(!userExist){throw new Error ('user not found')}
-    if(userExist.isVerified===true){throw new Error ('user already verified')}
+    if(!userExist){userError.userNotExist}
+    if(userExist.isVerified===true){ throw userAlreadyVerified}
     const otp = await authOTP.getOtpByEmail(email)
-    if(!otp){throw new Error('otp expires , please resend otp')}
-    if(otp.code!==code){throw new Error ('invalid otp')}
+
+    if(!otp){otpExpiresin}
+
+    if(otp.code!==code){invalidCode}
+
     const updateUser = await userRepository.updateUserByEmail(email,{isVerified:true})
     await authOTP.deleteOTP(email)
     return updateUser
@@ -55,23 +62,21 @@ export async function verifiyAccount(email,code) {
 
 export async function login(email,password) {
     const user = await authRepository.checkUserExistByEmail(email)
-if(!user){throw new Error('user not found')}
-if(user.isVerified===false){throw new Error('isVerified not found')} 
+if(!user){userError.userNotExist}
+if(user.isVerified===false){  throw userNotVerified} 
 
-const match = await bcrypt.compare(password,user.password) 
+const match = await comparePassword(password,user['password'])
 
 if(!match){throw new Error('password not exist into db')} 
-const token = JWT.sign({id:user.id,name:user.name,email:user.email},
-    process.env.JWT_SECRET,
-    {expiresIn:toSeconds(1,'hours')}
-)
-return token
+
+ return generateToken({id:user.id,name:user.name}) 
+   
 }
 
 
 export async function sendOtp(email) {
     const user = await authRepository.checkUserExistByEmail(email)
-    if(!user){throw new Error('user not found')}
+    if(!user){ throw userNotExist}
      await authOTP.deleteOTP(email) 
        const code =  await generateOTPCode()
 
@@ -83,7 +88,37 @@ export async function sendOtp(email) {
        await authOTP.createOTP({
         code:code,
         email:email,
-        expiresAt:new Date(Date.now()+toSeconds(5,'min')*1000)
+        expiresAt:new Date(Date.now()+toSeconds(5,'minutes')*1000)
        })
 }
-export default {register,verifiyAccount,login,sendOtp}
+export async function resetPassword(email,code,newPassword){
+    const otp = await authOTP.getOtpByEmail(email)
+    if(!otp) {otpExpiresin}
+    if(otp.code!==code){invalidCode}
+    const hashedPassword = await hashPassword(newPassword)
+    await userRepository.updateUserByEmail(email,{password:hashedPassword})
+    await authOTP.deleteOTP(email)
+
+
+}
+
+export async function loginWithGoogle(idToken) {
+     const payload = await verifyidToken(idToken)
+   const user= await authRepository.checkUserExistByEmail(email)
+   if(user){
+    return generateToken({
+        id:user.id,email:user.email
+    })
+   }
+   const createUser = await authRepository.createUser({
+    name:payload.createUser,
+    email:payload.createUser,
+    provider:payload.createUser,
+    isVerified:true
+   })
+   return generateToken({
+    id:createUser.id, email:createUser.email
+   })
+    
+}
+export default {register,verifiyAccount,login,sendOtp,resetPassword,loginWithGoogle}
